@@ -1,4 +1,3 @@
-
 import { NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -11,32 +10,53 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.CUSTOM_AI_API_KEY;
 
     if (!llamaUrl) {
-      throw new Error('CUSTOM_AI_SERVICE_URL is not defined in environment variables');
+      console.error('Environment variable CUSTOM_AI_SERVICE_URL is missing.');
+      return new Response(JSON.stringify({ error: 'CUSTOM_AI_SERVICE_URL is not defined in environment variables' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // 构建上下文历史。这里假设使用传统的 Text Completion 拼接方式。
-    // 如果你的服务是 OpenAI 兼容的 /v1/chat/completions 接口，可能需要调整 Body 格式。
+    console.log(`Attempting to fetch from AI service: ${llamaUrl}`);
+
+    // 构建上下文历史
     const fullPrompt = history
       .map((msg: any) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
       .join('\n') + `\nUser: ${prompt}\nAssistant:`;
 
-    const response = await fetch(llamaUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        prompt: fullPrompt,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 1024,
-        stream: true,
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(llamaUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey || ''}`
+        },
+        body: JSON.stringify({
+          prompt: fullPrompt,
+          temperature: 0.7,
+          top_p: 0.9,
+          max_tokens: 1024,
+          stream: true,
+        }),
+      });
+    } catch (fetchError: any) {
+      console.error('Fetch operation failed:', fetchError);
+      return new Response(JSON.stringify({ 
+        error: `Fetch failed to reach ${llamaUrl}. Technical reason: ${fetchError.message || 'Unknown network error'}` 
+      }), {
+        status: 502, // Bad Gateway
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch from custom AI service: ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'No error body');
+      console.error(`AI service returned ${response.status}: ${errorText}`);
+      return new Response(JSON.stringify({ error: `AI service returned error ${response.status}: ${errorText}` }), {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const stream = new ReadableStream({
@@ -63,24 +83,21 @@ export async function POST(req: NextRequest) {
                 
                 try {
                   const data = JSON.parse(dataStr);
-                  // 针对 llama.cpp 或 OpenAI 格式的流式输出解析
                   const content = data.content || (data.choices && data.choices[0]?.delta?.content);
                   if (content) {
                     controller.enqueue(new TextEncoder().encode(content));
                   }
                 } catch (e) {
-                  // 忽略部分数据块的解析错误
+                  // Ignore parse errors for individual chunks
                 }
               } else if (line.trim() && !line.startsWith(':')) {
-                // 处理一些直接返回文本块的服务
                 try {
-                  // 有些简单的流只返回 JSON 字符串
                   const data = JSON.parse(line);
                   if (data.content) {
                     controller.enqueue(new TextEncoder().encode(data.content));
                   }
                 } catch (e) {
-                  // 如果不是 JSON，尝试直接作为文本（取决于具体服务实现）
+                  // Handle cases where chunks are just raw text (optional)
                 }
               }
             }
@@ -101,7 +118,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Internal API Route Error:', error);
+    return new Response(JSON.stringify({ error: error.message || 'An unexpected error occurred' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
