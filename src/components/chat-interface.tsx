@@ -47,7 +47,10 @@ export function ChatInterface() {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to connect to AI');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to connect to AI');
+      }
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('Failed to read response stream');
@@ -70,9 +73,12 @@ export function ChatInterface() {
           return newMessages;
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'model', content: 'Sorry, I encountered an error connecting to the Llama AI.' }]);
+      setMessages(prev => [...prev, { 
+        role: 'model', 
+        content: `Error: ${error.message || 'I encountered an error connecting to the Llama AI.'}` 
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -109,7 +115,7 @@ export function ChatInterface() {
               </div>
               <h3 className="text-xl font-headline font-semibold text-foreground">Welcome to LlamaChat AI</h3>
               <p className="text-muted-foreground max-w-sm text-sm">
-                Powered by llama.cpp. Ask me anything about data governance, coding, or general knowledge.
+                Powered by your custom AI service. Ask me anything about data governance, coding, or general knowledge.
               </p>
             </div>
           ) : (
@@ -156,7 +162,7 @@ export function ChatInterface() {
           </div>
         </div>
         <p className="text-center text-[10px] text-muted-foreground mt-4 uppercase tracking-widest font-medium">
-          Powered by Local Llama LLM
+          Powered by your Custom AI service
         </p>
       </div>
     </div>
