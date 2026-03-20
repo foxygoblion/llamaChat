@@ -1,3 +1,4 @@
+
 import { NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -6,18 +7,24 @@ export async function POST(req: NextRequest) {
   try {
     const { prompt, history } = await req.json();
 
-    // Construct history for the model
+    const llamaUrl = process.env.CUSTOM_AI_SERVICE_URL;
+    const apiKey = process.env.CUSTOM_AI_API_KEY;
+
+    if (!llamaUrl) {
+      throw new Error('CUSTOM_AI_SERVICE_URL is not defined in environment variables');
+    }
+
+    // 构建上下文历史。这里假设使用传统的 Text Completion 拼接方式。
+    // 如果你的服务是 OpenAI 兼容的 /v1/chat/completions 接口，可能需要调整 Body 格式。
     const fullPrompt = history
       .map((msg: any) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
       .join('\n') + `\nUser: ${prompt}\nAssistant:`;
 
-    const llamaUrl = 'http://100.84.17.115:1234/completion';
-    
     const response = await fetch(llamaUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer sk-123456'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         prompt: fullPrompt,
@@ -29,7 +36,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch from llama.cpp: ${response.statusText}`);
+      throw new Error(`Failed to fetch from custom AI service: ${response.statusText}`);
     }
 
     const stream = new ReadableStream({
@@ -56,11 +63,24 @@ export async function POST(req: NextRequest) {
                 
                 try {
                   const data = JSON.parse(dataStr);
+                  // 针对 llama.cpp 或 OpenAI 格式的流式输出解析
+                  const content = data.content || (data.choices && data.choices[0]?.delta?.content);
+                  if (content) {
+                    controller.enqueue(new TextEncoder().encode(content));
+                  }
+                } catch (e) {
+                  // 忽略部分数据块的解析错误
+                }
+              } else if (line.trim() && !line.startsWith(':')) {
+                // 处理一些直接返回文本块的服务
+                try {
+                  // 有些简单的流只返回 JSON 字符串
+                  const data = JSON.parse(line);
                   if (data.content) {
                     controller.enqueue(new TextEncoder().encode(data.content));
                   }
                 } catch (e) {
-                  // Ignore parsing errors for partial chunks
+                  // 如果不是 JSON，尝试直接作为文本（取决于具体服务实现）
                 }
               }
             }
