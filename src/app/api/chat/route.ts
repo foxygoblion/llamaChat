@@ -10,14 +10,13 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.CUSTOM_AI_API_KEY;
 
     if (!llamaUrl) {
-      console.error('Environment variable CUSTOM_AI_SERVICE_URL is missing.');
       return new Response(JSON.stringify({ error: 'CUSTOM_AI_SERVICE_URL is not defined in environment variables' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`Attempting to fetch from AI service: ${llamaUrl}`);
+    console.log(`[API] Attempting to proxy request to: ${llamaUrl}`);
 
     // 构建上下文历史
     const fullPrompt = history
@@ -26,6 +25,10 @@ export async function POST(req: NextRequest) {
 
     let response: Response;
     try {
+      // 增加超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
       response = await fetch(llamaUrl, {
         method: 'POST',
         headers: {
@@ -39,20 +42,28 @@ export async function POST(req: NextRequest) {
           max_tokens: 1024,
           stream: true,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
     } catch (fetchError: any) {
-      console.error('Fetch operation failed:', fetchError);
+      console.error('[API] Fetch Error Detail:', fetchError);
+      
+      let message = fetchError.message || 'Unknown network error';
+      if (fetchError.name === 'AbortError') message = 'Connection timed out after 30 seconds';
+      
       return new Response(JSON.stringify({ 
-        error: `Fetch failed to reach ${llamaUrl}. Technical reason: ${fetchError.message || 'Unknown network error'}` 
+        error: `Could not reach AI service at ${llamaUrl}. 
+        Technical Reason: ${message}. 
+        Note: If the service is running on this workstation, try using http://127.0.0.1:8080/completion instead of the public URL.` 
       }), {
-        status: 502, // Bad Gateway
+        status: 502,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'No error body');
-      console.error(`AI service returned ${response.status}: ${errorText}`);
+      console.error(`[API] AI Service Error (${response.status}): ${errorText}`);
       return new Response(JSON.stringify({ error: `AI service returned error ${response.status}: ${errorText}` }), {
         status: response.status,
         headers: { 'Content-Type': 'application/json' },
@@ -97,7 +108,7 @@ export async function POST(req: NextRequest) {
                     controller.enqueue(new TextEncoder().encode(data.content));
                   }
                 } catch (e) {
-                  // Handle cases where chunks are just raw text (optional)
+                  // Handle raw text if necessary
                 }
               }
             }
@@ -118,7 +129,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error('Internal API Route Error:', error);
+    console.error('[API] Internal Exception:', error);
     return new Response(JSON.stringify({ error: error.message || 'An unexpected error occurred' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

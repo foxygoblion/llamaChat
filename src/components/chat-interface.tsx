@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Sparkles } from 'lucide-react';
+import { Send, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ChatMessage } from './chat-message';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface Message {
   role: 'user' | 'model';
   content: string;
+  isError?: boolean;
 }
 
 export function ChatInterface() {
@@ -43,17 +45,28 @@ export function ChatInterface() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: userMessage,
-          history: messages,
+          history: messages.filter(m => !m.isError),
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to connect to AI');
+        const errorMessage = errorData.error || 'Failed to connect to AI service';
+        setMessages(prev => [...prev, { 
+          role: 'model', 
+          content: errorMessage,
+          isError: true 
+        }]);
+        setIsLoading(false);
+        return;
       }
 
       const reader = response.body?.getReader();
-      if (!reader) throw new Error('Failed to read response stream');
+      if (!reader) {
+        setMessages(prev => [...prev, { role: 'model', content: 'Failed to read response stream', isError: true }]);
+        setIsLoading(false);
+        return;
+      }
 
       setMessages(prev => [...prev, { role: 'model', content: '' }]);
 
@@ -69,7 +82,10 @@ export function ChatInterface() {
 
         setMessages(prev => {
           const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = accumulatedResponse;
+          const lastMsg = newMessages[newMessages.length - 1];
+          if (lastMsg && lastMsg.role === 'model') {
+            lastMsg.content = accumulatedResponse;
+          }
           return newMessages;
         });
       }
@@ -77,7 +93,8 @@ export function ChatInterface() {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
         role: 'model', 
-        content: `Error: ${error.message || 'I encountered an error connecting to the Llama AI.'}` 
+        content: `Connection Error: ${error.message || 'Could not connect to the server.'}`,
+        isError: true
       }]);
     } finally {
       setIsLoading(false);
@@ -121,7 +138,19 @@ export function ChatInterface() {
           ) : (
             <div className="max-w-3xl mx-auto w-full">
               {messages.map((msg, i) => (
-                <ChatMessage key={i} role={msg.role} content={msg.content} />
+                <div key={i} className="mb-6">
+                  {msg.isError ? (
+                    <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive-foreground">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Service Error</AlertTitle>
+                      <AlertDescription className="text-sm font-mono break-all">
+                        {msg.content}
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <ChatMessage role={msg.role} content={msg.content} />
+                  )}
+                </div>
               ))}
               {isLoading && messages[messages.length-1]?.role === 'user' && (
                 <div className="flex w-full mb-6 gap-4 animate-in fade-in">
