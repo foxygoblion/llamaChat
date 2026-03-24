@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 
 export type FileLanguage =
+    "lua"
   | "typescript"
   | "javascript"
   | "python"
@@ -44,6 +45,7 @@ export interface RepoNode {
 }
 
 const LANG_MAP: Record<string, FileLanguage> = {
+  lua: "lua",
   ts: "typescript",
   tsx: "typescript",
   js: "javascript",

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { AttachedFile, FileLanguage } from "@/hooks/use-file-context";
 
 const LANG_COLORS: Record<string, string> = {
+  lua: "border-purple-300/40 bg-purple-300/10 text-purple-200",
   typescript: "border-blue-500/40 bg-blue-500/10 text-blue-300",
   javascript: "border-yellow-500/40 bg-yellow-500/10 text-yellow-300",
   python: "border-green-500/40 bg-green-500/10 text-green-300",
@@ -110,7 +111,7 @@ function FileChip({
 }) {
   const colorClass =
     LANG_COLORS[file.language as string] ?? LANG_COLORS.unknown;
-
+  console.log("Lua 文件状态：", file.name, file.language, file.selected);
   return (
     <div
       className={cn(
