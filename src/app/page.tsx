@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from 'react';
-import { ChatSidebar } from '@/components/chat-sidebar';
-import { ChatInterface } from '@/components/chat-interface';
-import { useConversations } from '@/hooks/use-conversations';
+import { useState, useCallback } from "react";
+import { ChatSidebar } from "@/components/chat-sidebar";
+import { ChatInterface } from "@/components/chat-interface";
+import { useConversations } from "@/hooks/use-conversations";
 
 export default function Home() {
   const {
@@ -22,37 +22,44 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = useCallback(
-    async (convId: string, userMessage: string) => {
+    async (convId: string, userMessage: string, contextStr?: string) => {
       // If __new__ or no conversation, create one first
       let targetId = convId;
-      if (convId === '__new__' || !activeId) {
+      if (convId === "__new__" || !activeId) {
         targetId = createConversation();
-        // give state a tick to propagate
-        await new Promise(r => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
       }
 
-      // Add user message
-      addMessage(targetId, { role: 'user', content: userMessage });
+      // Add user message to history
+      addMessage(targetId, { role: "user", content: userMessage });
       setIsLoading(true);
 
       try {
-        // Build history from conversation (excluding last user message just added)
-        const conv = conversations.find(c => c.id === targetId);
+        // Build history (exclude errors)
+        const conv = conversations.find((c) => c.id === targetId);
         const history = (conv?.messages ?? [])
-          .filter(m => !m.isError)
-          .map(m => ({ role: m.role, content: m.content }));
+          .filter((m) => !m.isError)
+          .map((m) => ({ role: m.role, content: m.content }));
 
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: userMessage, history }),
+        // Prepend file context to the prompt if provided
+        const promptWithContext = contextStr
+          ? `${contextStr}\n\n用户问题：${userMessage}`
+          : userMessage;
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: promptWithContext,
+            history,
+          }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           addMessage(targetId, {
-            role: 'model',
-            content: errorData.error || '连接 AI 服务失败',
+            role: "model",
+            content: errorData.error || "连接 AI 服务失败",
             isError: true,
           });
           return;
@@ -60,12 +67,16 @@ export default function Home() {
 
         const reader = response.body?.getReader();
         if (!reader) {
-          addMessage(targetId, { role: 'model', content: '读取响应流失败', isError: true });
+          addMessage(targetId, {
+            role: "model",
+            content: "读取响应流失败",
+            isError: true,
+          });
           return;
         }
 
-        // Add empty model message to fill in
-        addMessage(targetId, { role: 'model', content: '' });
+        // Add placeholder model message
+        addMessage(targetId, { role: "model", content: "" });
 
         const decoder = new TextDecoder();
         while (true) {
@@ -76,8 +87,8 @@ export default function Home() {
         }
       } catch (error: any) {
         addMessage(targetId, {
-          role: 'model',
-          content: `连接错误：${error.message || '无法连接到服务器'}`,
+          role: "model",
+          content: `连接错误：${error.message || "无法连接到服务器"}`,
           isError: true,
         });
       } finally {
