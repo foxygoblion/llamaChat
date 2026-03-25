@@ -95,7 +95,7 @@ export function UploadButtons({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rs,.go,.java,.cpp,.cc,.cxx,.c,.h,.hpp,.css,.scss,.less,.html,.htm,.json,.jsonc,.yaml,.yml,.md,.mdx,.sh,.bash,.zsh,.sql,.txt,.env,.gitignore,.prettierrc,.eslintrc"
+        accept=".ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rs,.go,.java,.cpp,.cc,.cxx,.c,.h,.hpp,.css,.scss,.less,.html,.htm,.json,.jsonc,.yaml,.yml,.md,.mdx,.sh,.bash,.zsh,.sql,.txt,.env,.gitignore,.prettierrc,.eslintrc,.lua"
         onChange={handleFileChange}
         className="hidden"
       />
