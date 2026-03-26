@@ -40,8 +40,10 @@ export async function POST(req: NextRequest) {
           temperature: 0.2,
           model: "qwen3-coder",
           top_p: 0.9,
-          max_tokens: 2048,
+          max_tokens: 4096,
           stream: true,
+          enable_thinking: false, // 某些实现支持
+          skip_thinking: true,    // 某些实现支持
         }),
         signal: controller.signal,
       });

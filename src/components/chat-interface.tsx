@@ -100,9 +100,11 @@ export function ChatInterface({
   const hasContext = attachedFiles.filter((f) => f.selected).length > 0;
 
   return (
-    <div className="flex flex-col flex-1 h-full bg-background overflow-hidden">
-      {/* Header */}
-      <header className="h-14 border-b border-border flex items-center justify-between px-5 bg-background/80 backdrop-blur-md sticky top-0 z-20 shrink-0">
+    // ✅ min-h-0 让 flex 子项能正确收缩，overflow-hidden 防止撑破父容器
+    <div className="flex flex-col flex-1 min-h-0 bg-background overflow-hidden">
+
+      {/* ── Header ── */}
+      <header className="flex-shrink-0 h-14 border-b border-border flex items-center justify-between px-5 bg-background/80 backdrop-blur-md z-20">
         <div className="flex items-center gap-2.5 min-w-0">
           <Sparkles className="w-4 h-4 text-primary shrink-0" />
           <h2 className="font-medium text-sm text-foreground truncate">
@@ -135,10 +137,10 @@ export function ChatInterface({
         </div>
       </header>
 
-      {/* Context Preview Panel */}
+      {/* ── Context Preview Panel ── */}
       {showContextPreview && hasContext && (
-        <div className="border-b border-border/50 bg-[hsl(231,16%,11%)] shrink-0">
-          <div className="max-w-3xl mx-auto px-4 py-3">
+        <div className="flex-shrink-0 border-b border-border/50 bg-[hsl(231,16%,11%)]">
+          <div className="px-4 sm:px-6 py-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-medium text-green-400/80">
                 代码上下文预览（将随下一条消息发送）
@@ -157,7 +159,7 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Repo Tree Side Panel */}
+      {/* ── Repo Tree Side Panel ── */}
       {showRepoTree && repoTree && (
         <div
           className="fixed inset-y-0 right-0 z-30 w-80 shadow-2xl"
@@ -176,23 +178,27 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 relative overflow-hidden">
-        <ScrollArea className="h-full px-4 md:px-6 py-6">
+      {/* ── Messages ──
+          flex-1 + min-h-0 → 占满剩余高度
+          overflow-y-auto  → 内容多时在区域内自己滚动
+      */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div
+          className={cn(
+            "px-3 sm:px-5 lg:px-8 py-6 transition-all duration-300",
+            showRepoTree && repoTree ? "lg:pr-[22rem]" : ""
+          )}
+        >
           {messages.length === 0 ? (
             <EmptyState
               onNewConversation={onNewConversation}
               hasConversation={!!conversation}
             />
           ) : (
-            <div
-              className={cn(
-                "mx-auto w-full transition-all duration-300",
-                showRepoTree && repoTree ? "max-w-2xl" : "max-w-3xl"
-              )}
-            >
+            // ✅ 消息列表：不再 max-w + mx-auto 居中，让气泡靠各自方向
+            <div className="w-full space-y-5">
               {messages.map((msg, i) => (
-                <div key={i} className="mb-5">
+                <div key={i}>
                   {msg.isError ? (
                     <Alert
                       variant="destructive"
@@ -211,7 +217,7 @@ export function ChatInterface({
               ))}
 
               {isLoading && messages[messages.length - 1]?.role === "user" && (
-                <div className="flex w-full mb-5 gap-3 animate-in fade-in">
+                <div className="flex w-full gap-3 animate-in fade-in">
                   <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
                     <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
                   </div>
@@ -225,17 +231,17 @@ export function ChatInterface({
               <div ref={scrollRef} />
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
 
-      {/* Input Area */}
+      {/* ── Input Area — always pinned to bottom ── */}
       <div
         className={cn(
-          "px-4 md:px-6 py-4 border-t border-border bg-background/60 backdrop-blur-sm shrink-0 transition-all duration-300",
-          showRepoTree && repoTree ? "mr-80" : ""
+          "flex-shrink-0 px-3 sm:px-5 lg:px-8 py-4 border-t border-border bg-background/60 backdrop-blur-sm transition-all duration-300",
+          showRepoTree && repoTree ? "lg:pr-[22rem]" : ""
         )}
       >
-        <div className="max-w-3xl mx-auto">
+        <div className="w-full">
           <DropZone onFileDrop={addFile} onRepoDrop={loadRepo} disabled={isLoading}>
             {/* Attached files bar */}
             {attachedFiles.length > 0 && (
@@ -309,7 +315,7 @@ function EmptyState({
   hasConversation: boolean;
 }) {
   return (
-    <div className="h-full flex flex-col items-center justify-center mt-12 text-center space-y-4 px-6">
+    <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-4 px-6">
       <div className="w-16 h-16 rounded-2xl bg-muted/40 flex items-center justify-center mb-1 border border-border/60">
         <Sparkles className="w-7 h-7 text-muted-foreground" />
       </div>
