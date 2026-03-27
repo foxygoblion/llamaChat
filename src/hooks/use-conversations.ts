@@ -8,7 +8,6 @@ export interface Message {
   role: 'user' | 'model';
   content: string;
   isError?: boolean;
-  timestamp: number;
 }
 
 export interface Conversation {
@@ -179,6 +178,18 @@ export function useConversations() {
     });
   }, []);
 
+  const isDuplicateMessage = useCallback((convId: string, message: string): boolean => {
+    const conversation = conversations.find(c => c.id === convId);
+    if (!conversation || conversation.messages.length === 0) {
+      return false;
+    }
+    const lastMessage = conversation.messages[conversation.messages.length - 1];
+    if (lastMessage.role !== 'user') {
+      return false;
+    }
+    return lastMessage.content.trim() === message.trim();
+  }, [conversations]);
+
   return {
     conversations,
     activeId,
@@ -191,5 +202,6 @@ export function useConversations() {
     updateLastMessage,
     appendToLastMessage,
     renameConversation,
+    isDuplicateMessage,
   };
 }
