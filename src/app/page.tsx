@@ -43,13 +43,6 @@ export default function Home() {
         return;
       }
 
-      // 1. Resolve / create conversation
-      let targetId = convId;
-      if (convId === "__new__" || !activeId) {
-        targetId = createConversation();
-        // Wait one tick so the new conversation is in the ref before we use it
-        await new Promise((r) => setTimeout(r, 0));
-      }
 
       // 2. Snapshot the CURRENT history BEFORE adding the new user message.
       //    Key fix: read from ref (latest state) synchronously before
