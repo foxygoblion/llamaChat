@@ -17,6 +17,7 @@ export default function Home() {
     addMessage,
     appendToLastMessage,
     renameConversation,
+    isDuplicateMessage,
   } = useConversations();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -29,6 +30,18 @@ export default function Home() {
   const handleSendMessage = useCallback(
     async (convId: string, userMessage: string, contextStr?: string) => {
       if (isLoading) return;
+      
+      // 去重检查：如果用户快速发送相同消息，阻止重复提交
+      let targetId = convId;
+      if (convId === '__new__' || !activeId) {
+        targetId = createConversation();
+      }
+      
+      const trimmedMessage = userMessage.trim();
+      if (isDuplicateMessage(targetId, trimmedMessage)) {
+        // 显示提示而不是阻止
+        return;
+      }
 
       // 1. Resolve / create conversation
       let targetId = convId;
