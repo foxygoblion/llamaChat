@@ -145,11 +145,16 @@ export function ChatInterface({
               <span className="text-[11px] font-medium text-green-400/80">
                 代码上下文预览（将随下一条消息发送）
               </span>
-              <span className="text-[10px] text-muted-foreground">
-                {new Blob([contextStr]).size < 1024
-                  ? `${new Blob([contextStr]).size} B`
-                  : `${(new Blob([contextStr]).size / 1024).toFixed(1)} KB`}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground">
+                  {new Blob([contextStr]).size < 1024
+                    ? `${new Blob([contextStr]).size} B`
+                    : `${(new Blob([contextStr]).size / 1024).toFixed(1)} KB`}
+                </span>
+                <span className="text-[9px] text-muted-foreground/60">
+                  / 500 KB 上限
+                </span>
+              </div>
             </div>
             <pre className="text-[10px] font-mono text-muted-foreground bg-muted/30 rounded-lg p-3 max-h-32 overflow-auto leading-relaxed">
               {contextStr.slice(0, 800)}
