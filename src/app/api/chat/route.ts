@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     try {
       // 增加超时控制
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout
 
       response = await fetch(llamaUrl, {
         method: 'POST',
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
           temperature: 0.2,
           model: "qwen3-coder",
           top_p: 0.9,
-          max_tokens: 2048,
+          max_tokens: 4096,
           stream: true,
         }),
         signal: controller.signal,
