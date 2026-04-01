@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ChatInterface } from "@/components/chat-interface";
 import { useConversations } from "@/hooks/use-conversations";
@@ -17,31 +17,48 @@ export default function Home() {
     addMessage,
     appendToLastMessage,
     renameConversation,
+    isDuplicateMessage,
   } = useConversations();
 
   const [isLoading, setIsLoading] = useState(false);
 
+  // Keep a ref to latest conversations so callbacks always see fresh data
+  // without needing to be re-created (avoids stale closure bugs).
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+
   const handleSendMessage = useCallback(
     async (convId: string, userMessage: string, contextStr?: string) => {
-      // If __new__ or no conversation, create one first
+      if (isLoading) return;
+      
+      // 去重检查：如果用户快速发送相同消息，阻止重复提交
       let targetId = convId;
-      if (convId === "__new__" || !activeId) {
+      if (convId === '__new__' || !activeId) {
         targetId = createConversation();
-        await new Promise((r) => setTimeout(r, 0));
+      }
+      
+      const trimmedMessage = userMessage.trim();
+      if (isDuplicateMessage(targetId, trimmedMessage)) {
+        // 显示提示而不是阻止
+        return;
       }
 
-      // Add user message to history
+
+      // 2. Snapshot the CURRENT history BEFORE adding the new user message.
+      //    Key fix: read from ref (latest state) synchronously before
+      //    addMessage updates state, so history never includes current turn.
+      const currentMessages =
+        conversationsRef.current.find((c) => c.id === targetId)?.messages ?? [];
+
+      const history = currentMessages
+        .filter((m) => !m.isError)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      // 3. Optimistically add user message to UI
       addMessage(targetId, { role: "user", content: userMessage });
       setIsLoading(true);
 
       try {
-        // Build history (exclude errors)
-        const conv = conversations.find((c) => c.id === targetId);
-        const history = (conv?.messages ?? [])
-          .filter((m) => !m.isError)
-          .map((m) => ({ role: m.role, content: m.content }));
-
-        // Prepend file context to the prompt if provided
         const promptWithContext = contextStr
           ? `${contextStr}\n\n用户问题：${userMessage}`
           : userMessage;
@@ -51,7 +68,7 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: promptWithContext,
-            history,
+            history, // pre-snapshot — does NOT include current turn
           }),
         });
 
@@ -75,15 +92,15 @@ export default function Home() {
           return;
         }
 
-        // Add placeholder model message
+        // 4. Add empty placeholder then stream into it
         addMessage(targetId, { role: "model", content: "" });
 
         const decoder = new TextDecoder();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value);
-          appendToLastMessage(targetId, chunk);
+          const token = decoder.decode(value, { stream: true });
+          if (token) appendToLastMessage(targetId, token);
         }
       } catch (error: any) {
         addMessage(targetId, {
@@ -95,7 +112,10 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [activeId, conversations, createConversation, addMessage, appendToLastMessage]
+    // intentionally omit `conversations` — use conversationsRef to avoid
+    // stale closures while preventing infinite re-creates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeId, isLoading, createConversation, addMessage, appendToLastMessage]
   );
 
   const handleNewConversation = useCallback(() => {

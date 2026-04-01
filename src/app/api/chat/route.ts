@@ -10,22 +10,26 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.CUSTOM_AI_API_KEY;
 
     if (!llamaUrl) {
-      return new Response(JSON.stringify({ error: 'CUSTOM_AI_SERVICE_URL is not defined in environment variables' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ error: 'CUSTOM_AI_SERVICE_URL is not defined' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    console.log(`[API] Attempting to proxy request to: ${llamaUrl}`);
+    // Build prompt from history + current turn
+    // history = already-completed turns, NOT including the current user message
+    const contextLines = (history ?? [])
+      .map((msg: { role: string; content: string }) =>
+        `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+      )
+      .join('\n');
 
-    // 构建上下文历史
-    const fullPrompt = history
-      .map((msg: any) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-      .join('\n') + `\nUser: ${prompt}\nAssistant:`;
+    const fullPrompt = contextLines
+      ? `${contextLines}\nUser: ${prompt}\nAssistant:`
+      : `User: ${prompt}\nAssistant:`;
 
     let response: Response;
     try {
-      // 增加超时控制
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout
 
@@ -33,12 +37,12 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey || ''}`
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         },
         body: JSON.stringify({
           prompt: fullPrompt,
           temperature: 0.2,
-          model: "qwen3-coder",
+          model: 'qwen3-coder',
           top_p: 0.9,
           max_tokens: 4096,
           stream: true,
@@ -47,30 +51,26 @@ export async function POST(req: NextRequest) {
       });
       clearTimeout(timeoutId);
     } catch (fetchError: any) {
-      console.error('[API] Fetch Error Detail:', fetchError);
-      
-      let message = fetchError.message || 'Unknown network error';
-      if (fetchError.name === 'AbortError') message = 'Connection timed out after 30 seconds';
-      
-      return new Response(JSON.stringify({ 
-        error: `Could not reach AI service at ${llamaUrl}. 
-        Technical Reason: ${message}. 
-        Note: If the service is running on this workstation, try using http://127.0.0.1:8080/completion instead of the public URL.` 
-      }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const message =
+        fetchError.name === 'AbortError'
+          ? '连接超时（60秒）'
+          : fetchError.message || 'Network error';
+      return new Response(
+        JSON.stringify({ error: `无法连接到 AI 服务: ${message}` }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No error body');
-      console.error(`[API] AI Service Error (${response.status}): ${errorText}`);
-      return new Response(JSON.stringify({ error: `AI service returned error ${response.status}: ${errorText}` }), {
-        status: response.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const errorText = await response.text().catch(() => '');
+      return new Response(
+        JSON.stringify({ error: `AI 服务返回错误 ${response.status}: ${errorText}` }),
+        { status: response.status, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
+    // Stream response back — emit only the raw text tokens.
+    // The client simply appends every chunk it receives.
     const stream = new ReadableStream({
       async start(controller) {
         const reader = response.body?.getReader();
@@ -80,42 +80,58 @@ export async function POST(req: NextRequest) {
         }
 
         const decoder = new TextDecoder();
+        // Buffer for incomplete SSE lines that span multiple network chunks
+        let buffer = '';
+
+        const emitToken = (raw: string) => {
+          const trimmed = raw.trim();
+          if (!trimmed || trimmed === '[DONE]') return;
+
+          // Strip "data: " prefix if present
+          const jsonStr = trimmed.startsWith('data:')
+            ? trimmed.slice(5).trim()
+            : trimmed;
+
+          if (!jsonStr || jsonStr === '[DONE]') return;
+
+          try {
+            const data = JSON.parse(jsonStr);
+            // llama.cpp native: { content: "..." }
+            // OpenAI-compat:    { choices: [{ delta: { content: "..." } }] }
+            //                or { choices: [{ text: "..." }] }
+            const token: string =
+              data.content ??
+              data.choices?.[0]?.delta?.content ??
+              data.choices?.[0]?.text ??
+              '';
+            if (token) {
+              controller.enqueue(new TextEncoder().encode(token));
+            }
+          } catch {
+            // Not JSON — skip silently (keep-alive pings, etc.)
+          }
+        };
+
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
+
+            // Split on newlines, keep the last incomplete line in buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
 
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const dataStr = line.slice(6).trim();
-                if (!dataStr || dataStr === '[DONE]') continue;
-                
-                try {
-                  const data = JSON.parse(dataStr);
-                  const content = data.content || (data.choices && data.choices[0]?.delta?.content);
-                  if (content) {
-                    controller.enqueue(new TextEncoder().encode(content));
-                  }
-                } catch (e) {
-                  // Ignore parse errors for individual chunks
-                }
-              } else if (line.trim() && !line.startsWith(':')) {
-                try {
-                  const data = JSON.parse(line);
-                  if (data.content) {
-                    controller.enqueue(new TextEncoder().encode(data.content));
-                  }
-                } catch (e) {
-                  // Handle raw text if necessary
-                }
-              }
+              emitToken(line);
             }
           }
-        } catch (error) {
-          controller.error(error);
+
+          // Flush anything left in buffer
+          if (buffer.trim()) emitToken(buffer);
+        } catch (err) {
+          controller.error(err);
         } finally {
           controller.close();
         }
@@ -124,16 +140,15 @@ export async function POST(req: NextRequest) {
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch (error: any) {
-    console.error('[API] Internal Exception:', error);
-    return new Response(JSON.stringify({ error: error.message || 'An unexpected error occurred' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: error.message || 'Unexpected server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 }

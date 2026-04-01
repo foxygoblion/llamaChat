@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export interface Message {
+  id: string; // 消息唯一 ID
+  timestamp: number; // 消息时间戳
   role: 'user' | 'model';
   content: string;
   isError?: boolean;
-  timestamp: number;
 }
 
 export interface Conversation {
@@ -19,6 +20,10 @@ export interface Conversation {
 
 const STORAGE_KEY = 'llamachat_conversations';
 const ACTIVE_CONV_KEY = 'llamachat_active_conversation';
+
+function generateMessageId(): string {
+  return 'msg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -173,6 +178,18 @@ export function useConversations() {
     });
   }, []);
 
+  const isDuplicateMessage = useCallback((convId: string, message: string): boolean => {
+    const conversation = conversations.find(c => c.id === convId);
+    if (!conversation || conversation.messages.length === 0) {
+      return false;
+    }
+    const lastMessage = conversation.messages[conversation.messages.length - 1];
+    if (lastMessage.role !== 'user') {
+      return false;
+    }
+    return lastMessage.content.trim() === message.trim();
+  }, [conversations]);
+
   return {
     conversations,
     activeId,
@@ -185,5 +202,6 @@ export function useConversations() {
     updateLastMessage,
     appendToLastMessage,
     renameConversation,
+    isDuplicateMessage,
   };
 }

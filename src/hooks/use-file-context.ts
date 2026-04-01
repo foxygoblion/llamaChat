@@ -105,7 +105,7 @@ const IGNORED_DIRS = new Set([
 ]);
 
 const MAX_FILE_SIZE = 500 * 1024; // 500KB per file
-const MAX_TOTAL_CONTEXT = 200 * 1024; // 200KB total context
+const MAX_TOTAL_CONTEXT = 500 * 1024; // 500KB total context (qwen3-coder model)
 
 function detectLanguage(filename: string): FileLanguage {
   const parts = filename.split(".");
@@ -358,18 +358,45 @@ export function useFileContext() {
     let total = 0;
     const parts: string[] = [];
 
-    for (const f of selected) {
+    // 智能截断策略：优先保留最近的文件
+    // 从后往前遍历，保留最近的文件内容
+    const reversedSelected = [...selected].reverse();
+
+    for (const f of reversedSelected) {
       const header = `\n\n--- File: ${f.path} ---\n\`\`\`${f.language}\n`;
       const footer = "\n```";
       const chunk = header + f.content + footer;
-      total += chunk.length;
-      if (total > MAX_TOTAL_CONTEXT) {
-        parts.push(
-          `\n\n--- File: ${f.path} ---\n[文件内容过大，已截断]`
-        );
+      const chunkSize = chunk.length;
+
+      // 如果当前文件就能填满剩余空间，则截断该文件
+      if (total + chunkSize > MAX_TOTAL_CONTEXT) {
+        const remaining = MAX_TOTAL_CONTEXT - total;
+        if (remaining > 50) { // 至少保留 50 字节
+          parts.unshift(
+            `\n\n--- File: ${f.path} ---\n\`\`\`${f.language}\n` +
+            f.content.slice(0, remaining - 20) +
+            "\n... [内容被截断]\n```"
+          );
+          total += chunkSize;
+        } else {
+          // 剩余空间不足，跳过该文件
+          parts.unshift(
+            `\n\n--- File: ${f.path} ---\n[文件过大，已跳过]`
+          );
+        }
         break;
       }
-      parts.push(chunk);
+
+      // 正常添加文件
+      parts.unshift(chunk);
+      total += chunkSize;
+    }
+
+    // 如果总大小未超限，但文件太多，也跳过最早的文件
+    if (total <= MAX_TOTAL_CONTEXT && selected.length > 10) {
+      // 只保留最近的 10 个文件
+      const recentFiles = parts.slice(0, 10);
+      return `以下是相关代码文件内容（保留最近的 10 个文件）：\n${recentFiles.join("")}`;
     }
 
     return `以下是相关代码文件内容：\n${parts.join("")}`;
